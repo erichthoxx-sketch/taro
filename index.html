@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#f6f4f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#161515" media="(prefers-color-scheme: dark)">
+<title>Таро-кабинет</title>
+<script>
+// Если телефон держит старую страницу, а файлы этой версии уже заменены новыми — один раз перезагружаем свежую страницу
+window.__stale = function () {
+  try { var n = +(sessionStorage.getItem('staleReload') || 0); if (n >= 2) return; sessionStorage.setItem('staleReload', n + 1); } catch (e) {}
+  location.replace(location.pathname + '?t=' + Date.now());
+};
+// Не загрузилось за 12 секунд — показываем кнопку «Обновить» вместо вечной «Загрузки…»
+setTimeout(function () {
+  var b = document.querySelector('#app .boot');
+  if (b) b.innerHTML = 'Не получилось загрузить приложение. <button onclick="window.__stale()">Обновить</button>';
+}, 12000);
+// Вышла новая версия — сами переходим на неё: при открытии и когда приложение возвращается из фона
+window.__V = '__APPV__';
+(function () {
+  if (window.__V.indexOf('__') === 0) return; // локальная разработка
+  var url = 'version.txt';
+  function check() {
+    fetch(url + '?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (v) {
+      v = (v || '').trim();
+      if (!v || v === window.__V) return;
+      try { if (sessionStorage.getItem('appV') === v) return; sessionStorage.setItem('appV', v); } catch (e) {}
+      location.replace(location.pathname + '?v=' + v);
+    }).catch(function () {});
+  }
+  window.addEventListener('load', check);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) check(); });
+})();
+</script>
+<link rel="manifest" href="manifest.webmanifest?v=4">
+<link rel="icon" href="moon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="moon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=Unbounded:wght@500;600&display=swap">
+<link rel="stylesheet" href="css/style.css" onerror="window.__stale()">
+<link rel="stylesheet" href="css/taro.css" onerror="window.__stale()">
+</head>
+<body>
+<div id="app"><p class="boot">Загрузка…</p></div>
+<dialog id="sheet"><form method="dialog" id="sheetForm"></form></dialog>
+<div id="toast" role="status" hidden></div>
+<script type="module" src="js/app.js" onerror="window.__stale()"></script>
+</body>
+</html>

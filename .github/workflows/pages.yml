@@ -1,0 +1,41 @@
+name: Публикация сайта
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  # проверка расчётов → сборка → публикация
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm test
+      - run: |
+          # каждая версия — в своей папке, чтобы браузер не держал старые файлы
+          V=v${GITHUB_SHA::8}
+          mkdir -p _site/$V
+          cp -r css js _site/$V/
+          echo $V > _site/version.txt
+          cp manifest.webmanifest moon.svg moon-180.png moon-512.png _site/
+          sed "s#__APPV__#$V#; s#\"css/#\"$V/css/#g; s#\"js/app.js#\"$V/js/app.js#" index.html > _site/index.html
+          grep -q "$V/js/app.js" _site/index.html
+          grep -q "$V/css/style.css" _site/index.html
+          grep -q "$V/css/taro.css" _site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: _site }
+      - id: deployment
+        uses: actions/deploy-pages@v4

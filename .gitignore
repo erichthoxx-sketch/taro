@@ -1,0 +1,3 @@
+node_modules/
+# резервные копии с личными данными не кладём на GitHub
+taro-kabinet-*.json
