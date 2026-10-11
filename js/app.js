@@ -1,4 +1,4 @@
-// Таро-кабинет: колоды с типовыми значениями и наработками, расклады, клиенты и чат с ChatGPT по каждой колоде.
+// Таро-кабинет: колоды с типовыми значениями и наработками, расклады, клиенты и чат с Gemini по каждой колоде.
 // Данные хранятся в Firebase под вашим аккаунтом, поэтому всё синхронизируется между телефоном и компьютером.
 import { createStore, authErrorText } from './core/store.js';
 import { installHandlers, esc, toast, acts, forms, watchForUpdates } from './core/ui.js';
@@ -56,7 +56,7 @@ function getCtx() {
   return cache;
 }
 
-const TABS = [['/', 'house', 'Главная'], ['/decks', 'deck', 'Колоды'], ['/readings', 'spread', 'Расклады'], ['/clients', 'people', 'Клиенты'], ['/chat', 'chat', 'ChatGPT']];
+const TABS = [['/', 'house', 'Главная'], ['/decks', 'deck', 'Колоды'], ['/readings', 'spread', 'Расклады'], ['/clients', 'people', 'Клиенты'], ['/chat', 'chat', 'Gemini']];
 function route() {
   const parts = (ui.route || '/').split('/').map(decodeURIComponent);
   const [, a, b, cc] = parts;

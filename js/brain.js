@@ -1,4 +1,4 @@
-// Как ChatGPT работает с колодой: что он знает (база знаний + память прошлых разговоров),
+// Как Gemini работает с колодой: что он знает (база знаний + память прошлых разговоров),
 // как записывает наработки таролога и как обновляет память, чтобы чат был «бесконечным».
 import { buildKnowledge, findCard } from './tcalc.js';
 import { CARD_FIELDS, KINDS } from './decks.js';
@@ -14,7 +14,7 @@ export const SUMMARY_AFTER = 60;    // когда несжатых сообще�
 
 export function aiConf(c) {
   const p = c.prefs;
-  return { key: p.openaiKey || '', model: p.model || 'gpt-4o' };
+  return { key: p.aiKey || '', model: p.model || 'gemini-flash-latest' };
 }
 
 function persona(c, deck) {
@@ -31,7 +31,7 @@ export function systemPrompt(c, deck, { focus = '', tools = true } = {}) {
   return `${persona(c, deck)}${rules}\n\n# Память прошлых разговоров по этой колоде\n${mem || '(пока пусто)'}\n\n# База знаний таролога\n${kb}`;
 }
 
-// Выполнить инструмент, который вызвал ChatGPT. Возвращает { result (для модели), label (для показа) }
+// Выполнить инструмент, который вызвал Gemini. Возвращает { result (для модели), label (для показа) }
 export async function runTool(c, deck, call) {
   let args = {};
   try { args = JSON.parse(call.args || '{}'); } catch { return { result: 'Ошибка: не разобрала аргументы' }; }
@@ -74,12 +74,12 @@ export async function sendChat(c, deck, msgs, text, live) {
     for (let round = 0; round < 4; round++) {
       const r = await chatStream({ key, model, messages, tools: TOOLS, signal: live.signal, onText: (t) => live.onText(done + t, notes) });
       if (!r.toolCalls.length || round === 3) { done += r.text; break; }
-      messages.push({ role: 'assistant', content: r.text || null, tool_calls: r.toolCalls.map((t) => ({ id: t.id, type: 'function', function: { name: t.name, arguments: t.args } })) });
+      messages.push({ role: 'assistant', content: r.text || null, tool_calls: r.toolCalls.map((t) => ({ id: t.id, type: 'function', function: { name: t.name, arguments: t.args } })), _parts: r.parts });
       if (r.text) done += r.text + '\n\n';
       for (const call of r.toolCalls) {
         const out = await runTool(app().ctx(), deck, call);
         if (out.label) notes.push({ label: out.label, link: out.link });
-        messages.push({ role: 'tool', tool_call_id: call.id, content: out.result });
+        messages.push({ role: 'tool', tool_call_id: call.id, name: call.name, content: out.result });
       }
       live.onText(done, notes);
     }
@@ -135,6 +135,18 @@ export async function interpret(c, r, { onText, signal }) {
   return res.text;
 }
 
+// Бесплатный Gemini ограничивает число запросов в минуту: при таком отказе ждём и пробуем ещё (до 3 раз)
+async function withRetry(fn, { signal, onWait } = {}) {
+  for (let i = 0; ; i++) {
+    try { return await fn(); } catch (e) {
+      if (e.code !== 'rate' || i >= 3) throw e;
+      const sec = Math.min(90, e.retryAfter || 30);
+      onWait?.(sec);
+      await new Promise((res, rej) => { const t = setTimeout(res, sec * 1000); signal?.addEventListener('abort', () => { clearTimeout(t); rej(new AIError('cancelled')); }, { once: true }); });
+    }
+  }
+}
+
 // Дописать пустые поля карт типовыми значениями (по несколько карт за запрос)
 export async function fillCards(c, deck, cards, { signal, onProgress } = {}) {
   const { key, model } = aiConf(c);
@@ -144,10 +156,10 @@ export async function fillCards(c, deck, cards, { signal, onProgress } = {}) {
     if (signal?.aborted) throw new AIError('cancelled');
     const chunk = cards.slice(i, i + 6);
     const ask = chunk.map((x) => ({ key: x.key, name: x.name, empty: fields.filter(([k]) => !(x[k] || '').trim()).map(([k]) => k), filled: Object.fromEntries(fields.filter(([k]) => (x[k] || '').trim()).map(([k]) => [k, x[k]])) }));
-    const res = await chatJSON({ key, model, signal, messages: [
+    const res = await withRetry(() => chatJSON({ key, model, signal, messages: [
       { role: 'system', content: `Ты — опытный таролог, знаток колоды «${deck.name}» (${KINDS[deck.kind]?.name}). Заполняешь справочник типовых значений карт для коллеги. Пиши по-русски, кратко и ёмко: 1–2 предложения или ключевые слова через запятую на поле. Учитывай традицию именно этой колоды и уже заполненные поля карты. Поля: ${fields.map(([k, l]) => `${k} — ${l}`).join('; ')}.` },
       { role: 'user', content: `Заполни ТОЛЬКО пустые поля (список empty) для этих карт. Верни JSON вида {"cards":[{"key":"...","поле":"текст"}]}.\n${JSON.stringify(ask)}` },
-    ] });
+    ] }), { signal, onWait: (sec) => onProgress?.(done, cards.length, sec) });
     const st = app().store, fresh = app().ctx().cardsByDeck[deck.id] || [];
     for (const item of res.cards || []) {
       const card = fresh.find((x) => x.key === item.key);

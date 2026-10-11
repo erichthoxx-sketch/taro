@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { templateCards, KINDS, groupsOf } from '../js/decks.js';
 import { BUILTIN_SPREADS, fitsDeck } from '../js/spreads.js';
-import { birthCards, findCard, cardCounts, buildKnowledge, md, parseSSE, pickModel } from '../js/tcalc.js';
+import { birthCards, findCard, cardCounts, buildKnowledge, md, parseSSE, pickModel, toGemini } from '../js/tcalc.js';
 
 test('шаблоны колод: число карт и уникальные ключи', () => {
   for (const k of ['rws', 'thoth', 'marseille', 'lenormand']) {
@@ -94,19 +94,38 @@ test('разметка ответа ИИ безопасна', () => {
   assert.equal(md('### Итог\n- раз\n- два'), '<h4>Итог</h4><ul><li>раз</li><li>два</li></ul>');
 });
 
-test('разбор потока ответа OpenAI', () => {
-  const chunk = 'data: {"choices":[{"delta":{"content":"При"}}]}\n\ndata: {"choices":[{"delta":{"content":"вет"}}]}\n\ndata: [DO';
+test('разбор потока ответа нейросети', () => {
+  const chunk = 'data: {"candidates":[{"content":{"parts":[{"text":"При"}]}}]}\r\n\r\ndata: {"candidates":[{"content":{"parts":[{"text":"вет"}]}}]}\r\n\r\ndata: {"cand';
   const a = parseSSE(chunk);
   assert.equal(a.events.length, 2);
-  assert.equal(a.events.map((e) => e.choices[0].delta.content).join(''), 'Привет');
-  const b = parseSSE(a.rest + 'NE]\n\n');
-  assert.deepEqual(b.events, [{ done: true }]);
+  assert.equal(a.events.map((e) => e.candidates[0].content.parts[0].text).join(''), 'Привет');
+  const b = parseSSE(a.rest + 'idates":[]}\n\n');
+  assert.deepEqual(b.events, [{ candidates: [] }]);
 });
 
-test('выбор модели ChatGPT', () => {
-  const ids = ['gpt-4o', 'gpt-4o-mini', 'gpt-5', 'gpt-5-mini', 'gpt-5-nano', 'gpt-5.5', 'gpt-5.5-mini', 'gpt-5.5-2026-04-01', 'gpt-realtime', 'o3', 'gpt-4o-audio-preview'];
-  assert.equal(pickModel(ids), 'gpt-5.5');
-  assert.equal(pickModel(ids, { cheap: true }), 'gpt-5.5-mini');
-  assert.equal(pickModel(['gpt-4o-mini']), 'gpt-4o-mini');
+test('переписка переводится в формат Gemini', () => {
+  const sig = { functionCall: { name: 'save_card_note', args: { card: 'Башня', text: 'освобождение' } }, thoughtSignature: 'abc' };
+  const g = toGemini([
+    { role: 'system', content: 'Ты помощник' },
+    { role: 'assistant', content: 'старый ответ без вопроса' },
+    { role: 'user', content: 'Привет' },
+    { role: 'user', content: 'Запомни про Башню' },
+    { role: 'assistant', content: null, tool_calls: [{ id: 'call_0', type: 'function', function: { name: 'save_card_note', arguments: '{}' } }], _parts: [sig] },
+    { role: 'tool', tool_call_id: 'call_0', name: 'save_card_note', content: 'Записано' },
+  ]);
+  assert.deepEqual(g.systemInstruction, { parts: [{ text: 'Ты помощник' }] });
+  assert.deepEqual(g.contents.map((c) => c.role), ['user', 'model', 'user'], 'стороны чередуются, начало — с пользователя');
+  assert.equal(g.contents[0].parts.length, 2, 'две реплики подряд склеены');
+  assert.deepEqual(g.contents[1].parts, [sig], 'вызов инструмента возвращается как прислала модель');
+  assert.deepEqual(g.contents[2].parts, [{ functionResponse: { name: 'save_card_note', response: { result: 'Записано' } } }]);
+});
+
+test('выбор модели Gemini', () => {
+  const ids = ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro', 'gemini-3-flash-preview', 'gemini-2.5-flash-preview-09-2025'];
+  assert.equal(pickModel(ids), 'gemini-2.5-flash', 'стабильная новейшая Flash, а не предварительная');
+  assert.equal(pickModel(ids, { lite: true }), 'gemini-2.5-flash-lite');
+  assert.equal(pickModel([...ids, 'gemini-flash-latest', 'gemini-flash-lite-latest']), 'gemini-flash-latest');
+  assert.equal(pickModel([...ids, 'gemini-flash-lite-latest'], { lite: true }), 'gemini-flash-lite-latest');
+  assert.equal(pickModel(['gemini-3-flash-preview', 'gemini-2.5-pro']), 'gemini-3-flash-preview');
   assert.equal(pickModel([]), '');
 });

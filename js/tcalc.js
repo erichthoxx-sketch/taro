@@ -118,7 +118,7 @@ export function md(src) {
   return out.join('');
 }
 
-// Разбор потока ответа OpenAI (server-sent events): возвращает готовые события и необработанный хвост
+// Разбор потока ответа нейросети (server-sent events): возвращает готовые события и необработанный хвост
 export function parseSSE(buffer) {
   const events = [];
   let rest = buffer, i;
@@ -133,12 +133,39 @@ export function parseSSE(buffer) {
   return { events, rest };
 }
 
-// Выбор модели ChatGPT из списка доступных по ключу: новейшая «основная» GPT (без mini/nano и спецверсий)
-export function pickModel(ids, { cheap = false } = {}) {
-  const ok = ids.filter((id) => /^(gpt-\d|o\d|chatgpt-)/.test(id) && !/(audio|realtime|transcribe|tts|image|search|codex|instruct|oss|vision|preview|-\d{4}-\d{2}-\d{2}$|-\d{4}$)/.test(id));
-  const ver = (id) => { const m = /^gpt-(\d+(?:\.\d+)?)/.exec(id); return m ? parseFloat(m[1]) : 0; };
-  const gpt = ok.filter((id) => id.startsWith('gpt-'));
-  const pool = gpt.filter((id) => (cheap ? /mini/.test(id) : !/(mini|nano)/.test(id)));
-  const list = (pool.length ? pool : gpt.length ? gpt : ok).sort((a, b) => ver(b) - ver(a) || a.length - b.length || a.localeCompare(b));
-  return list[0] || '';
+// Переписка в привычном виде (system / user / assistant / tool) → запрос к Gemini.
+// Соседние реплики одной стороны склеиваются: Gemini ждёт, что стороны чередуются.
+export function toGemini(messages) {
+  const sys = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
+  const contents = [];
+  const push = (role, parts) => {
+    const last = contents[contents.length - 1];
+    if (last && last.role === role) last.parts.push(...parts); else contents.push({ role, parts: [...parts] });
+  };
+  for (const m of messages) {
+    if (m.role === 'system') continue;
+    if (m.role === 'user') push('user', [{ text: m.content }]);
+    else if (m.role === 'assistant') {
+      // ответ с вызовом инструмента возвращаем ровно в том виде, в каком его прислала модель
+      const parts = m._parts?.length ? m._parts : [
+        ...(m.content ? [{ text: m.content }] : []),
+        ...(m.tool_calls || []).map((t) => ({ functionCall: { name: t.function.name, args: JSON.parse(t.function.arguments || '{}') } })),
+      ];
+      if (parts.length) push('model', parts);
+    } else if (m.role === 'tool') push('user', [{ functionResponse: { name: m.name, response: { result: m.content } } }]);
+  }
+  while (contents.length && contents[0].role !== 'user') contents.shift();
+  return { ...(sys ? { systemInstruction: { parts: [{ text: sys }] } } : {}), contents };
+}
+
+// Выбор модели Gemini из доступных по ключу: «последняя Flash» (бесплатная), иначе новейшая Flash.
+// lite — облегчённая Flash-Lite: проще отвечает, но бесплатных запросов в день больше.
+export function pickModel(ids, { lite = false } = {}) {
+  const alias = lite ? 'gemini-flash-lite-latest' : 'gemini-flash-latest';
+  if (ids.includes(alias)) return alias;
+  const ver = (id) => { const m = /^gemini-(\d+(?:\.\d+)?)-/.exec(id); return m ? parseFloat(m[1]) : 0; };
+  const re = lite ? /^gemini-\d+(?:\.\d+)?-flash-lite$/ : /^gemini-\d+(?:\.\d+)?-flash$/;
+  const reAny = lite ? /^gemini-\d+(?:\.\d+)?-flash-lite(-preview.*)?$/ : /^gemini-\d+(?:\.\d+)?-flash(-preview.*)?$/;
+  const byVer = (a, b) => ver(b) - ver(a) || a.length - b.length;
+  return ids.filter((id) => re.test(id)).sort(byVer)[0] || ids.filter((id) => reAny.test(id)).sort(byVer)[0] || (lite ? '' : ids.find((id) => /^gemini-.*flash/.test(id)) || ids[0] || '');
 }

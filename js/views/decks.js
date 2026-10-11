@@ -21,7 +21,7 @@ export function decksView(a) {
     return `<a class="cover-tile" href="#" data-act="go" data-to="/deck/${d.id}">${cover(d)}
       <span class="ct-title">${esc(d.name)}</span><span class="ct-num">${esc(c.kindName(d))} · ${cards.length} карт${noted ? ` · наработки: ${noted}` : ''}${c.defaultDeck?.id === d.id ? ' · основная' : ''}</span></a>`;
   }).join('')}</div>`
-    : `<div class="card"><p>Здесь будут ваши колоды. Для каждой — типовые значения всех карт, ваши наработки, материалы и отдельный чат с ChatGPT, который всё это помнит.</p>
+    : `<div class="card"><p>Здесь будут ваши колоды. Для каждой — типовые значения всех карт, ваши наработки, материалы и отдельный чат с Gemini, который всё это помнит.</p>
       <p class="muted small">Выберите основу — карты и типовые значения подставятся сами, дальше всё можно править:</p>
       <div class="row">${Object.entries(KINDS).map(([k, v]) => `<button data-act="deck.new" data-kind="${k}">${esc(v.short)}</button>`).join('')}</div></div>`}`;
   return { html, after: () => fillPhotos() };
@@ -75,7 +75,7 @@ export function deckPage(a, id) {
   <div class="book-head deck-head"><div class="cover big">${cover(d)}<label class="btn small-btn">${ic('camera')} Обложка<input type="file" accept="image/*" data-chg="deck.cover" data-id="${id}" hidden></label></div>
     <div class="book-info"><h2 class="deck-title">${esc(d.name)}</h2><div class="muted small">${esc(KINDS[d.kind]?.name || '')}${d.author ? ' · ' + esc(d.author) : ''}${c.defaultDeck?.id === id ? ' · <span class="tag on">основная</span>' : ''}</div>
       <div class="tiles"><div><div class="k">С наработками</div><div class="v">${cards.filter(hasNotes).length} из ${cards.length}</div></div><div><div class="k">Раскладов</div><div class="v">${readings.length}</div></div></div>
-      <div class="row"><button class="primary" data-act="go" data-to="/chat/${id}">${ic('chat')} Чат с ChatGPT</button><button data-act="reading.new" data-deck="${id}">${ic('spread')} Расклад</button></div></div></div>
+      <div class="row"><button class="primary" data-act="go" data-to="/chat/${id}">${ic('chat')} Чат с Gemini</button><button data-act="reading.new" data-deck="${id}">${ic('spread')} Расклад</button></div></div></div>
   <div class="chips seg">${TABS.map(([k, t]) => `<button class="chip ${tab === k ? 'on' : ''}" data-act="deck.tab" data-tab="${k}">${t}</button>`).join('')}</div>
   ${body}`;
   return { html, after: () => fillPhotos() };
@@ -95,8 +95,8 @@ function cardsTab(c, d, cards, ui) {
   <div class="card"><h2>Заполнение колоды</h2>
     <p class="small muted">Сфотографируйте карты по порядку (как в колоде: старшие арканы, потом масти) и загрузите пачкой — фото встанут на карты по порядку имён файлов.</p>
     <div class="row"><label class="btn">${ic('camera')} Фото карт пачкой<input type="file" accept="image/*" multiple data-chg="deck.photos" data-id="${d.id}" hidden></label>
-    <button data-act="deck.fill" data-id="${d.id}">${ic('sparkle')} Дописать пустые значения с ChatGPT</button></div>
-    <p class="hint">ChatGPT заполнит только пустые поля (любовь, работа, совет, да/нет…) — то, что вы написали сами, не трогает.</p>
+    <button data-act="deck.fill" data-id="${d.id}">${ic('sparkle')} Дописать пустые значения с Gemini</button></div>
+    <p class="hint">Gemini заполнит только пустые поля (любовь, работа, совет, да/нет…) — то, что вы написали сами, не трогает.</p>
     <div id="fillProgress"></div></div>`;
 }
 acts['deck.group'] = (d) => { app().ui.deckGroup = d.g; };
@@ -106,7 +106,7 @@ function aboutTab(c, d) {
   const f = (k, label, type = 'input', hint = '') => `<label for="df_${k}">${label}</label>${type === 'input'
     ? `<input id="df_${k}" value="${esc(d[k] || '')}" data-chg="deck.f" data-id="${d.id}" data-f="${k}">`
     : `<textarea id="df_${k}" rows="${type === 'big' ? 10 : 5}" data-chg="deck.f" data-id="${d.id}" data-f="${k}">${esc(d[k] || '')}</textarea>`}${hint ? `<p class="hint">${hint}</p>` : ''}`;
-  return `<div class="card mine"><h2>${ic('note')} Мои наработки по колоде</h2>${f('myNotes', 'Всё своё: как вы чувствуете колоду, приёмы, личные правила, с какими вопросами она лучше работает', 'big', 'Сохраняется, когда вы выходите из поля. ChatGPT в чате этой колоды видит этот текст.')}</div>
+  return `<div class="card mine"><h2>${ic('note')} Мои наработки по колоде</h2>${f('myNotes', 'Всё своё: как вы чувствуете колоду, приёмы, личные правила, с какими вопросами она лучше работает', 'big', 'Сохраняется, когда вы выходите из поля. Gemini в чате этой колоды видит этот текст.')}</div>
   <div class="card"><h2>О колоде</h2>
     ${f('name', 'Название')}
     <div class="f2"><div>${f('author', 'Автор')}</div><div>${f('artist', 'Художник')}</div></div>
@@ -128,7 +128,7 @@ acts['deck.default'] = async (d) => { await savePrefs({ defaultDeck: d.id }); to
 acts['deck.del'] = async (d) => {
   const c = app().ctx(), deck = c.decksById[d.id];
   const nR = c.readings.filter((r) => r.deckId === d.id).length;
-  if (!(await ask(`Удалить колоду «${deck.name}» со всеми картами, наработками, материалами и перепиской с ChatGPT?${nR ? ` Расклады (${nR}) останутся, но без значений карт.` : ''} Это не отменить.`))) return;
+  if (!(await ask(`Удалить колоду «${deck.name}» со всеми картами, наработками, материалами и перепиской с Gemini?${nR ? ` Расклады (${nR}) останутся, но без значений карт.` : ''} Это не отменить.`))) return;
   const st = app().store;
   const cards = c.cardsByDeck[d.id] || [];
   for (const x of cards) if (x.photo) await setPhoto(x.id, null).catch(() => {});
@@ -171,15 +171,15 @@ let fillCtl = null;
 acts['deck.fill'] = async (d) => {
   const c = app().ctx(), deck = c.decksById[d.id];
   if (fillCtl) { fillCtl.abort(); return; }
-  if (!c.prefs.openaiKey) { toast('Сначала добавьте ключ ChatGPT в настройках'); app().go('/settings'); return; }
+  if (!c.prefs.aiKey) { toast('Сначала добавьте ключ Gemini в настройках'); app().go('/settings'); return; }
   const cards = (c.cardsByDeck[d.id] || []).filter((x) => CARD_FIELDS.some(([k]) => !(x[k] || '').trim() && !(k === 'rev' && !c.reversals(deck))));
   if (!cards.length) { toast('Все поля уже заполнены'); return; }
-  if (!(await ask(`ChatGPT допишет пустые поля у ${cards.length} карт. Это займёт несколько минут и потратит немного денег с баланса OpenAI (обычно меньше 0,5 $ на колоду). Начать?`, 'Начать'))) return;
+  if (!(await ask(`Gemini допишет пустые поля у ${cards.length} карт. Это бесплатно и займёт несколько минут (бесплатный Gemini отвечает не чаще нескольких раз в минуту). Начать?`, 'Начать'))) return;
   fillCtl = new AbortController();
   const show = (t) => { const box = document.getElementById('fillProgress'); if (box) box.innerHTML = t; };
-  show(`<p class="small">ChatGPT заполняет карты: 0 из ${cards.length}… <button class="link" data-act="deck.fill" data-id="${d.id}">Остановить</button></p>`);
+  show(`<p class="small">Gemini заполняет карты: 0 из ${cards.length}… <button class="link" data-act="deck.fill" data-id="${d.id}">Остановить</button></p>`);
   try {
-    await fillCards(c, deck, cards, { signal: fillCtl.signal, onProgress: (k, n) => show(`<p class="small">ChatGPT заполняет карты: ${k} из ${n}… <button class="link" data-act="deck.fill" data-id="${d.id}">Остановить</button></p>`) });
+    await fillCards(c, deck, cards, { signal: fillCtl.signal, onProgress: (k, n, wait) => show(`<p class="small">Gemini заполняет карты: ${k} из ${n}${wait ? ` — бесплатный лимит, жду ${wait} с` : ''}… <button class="link" data-act="deck.fill" data-id="${d.id}">Остановить</button></p>`) });
     toast('Готово: пустые поля заполнены');
   } catch (e) {
     if (e.code !== 'cancelled') toast(aiErrorText(e)); else toast('Остановлено — уже заполненное сохранилось');
@@ -190,7 +190,7 @@ acts['deck.fill'] = async (d) => {
 function matsTab(d, mats) {
   const list = [...mats].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
   return `<div class="card"><div class="row between"><h2>Материалы и конспекты</h2><div class="row"><label class="btn small-btn">Из файла .txt<input type="file" accept=".txt,.md,text/plain" multiple data-chg="mat.import" data-deck="${d.id}" hidden></label><button class="primary" data-act="mat.edit" data-deck="${d.id}">${ic('plus')} Материал</button></div></div>
-    <p class="small muted">Конспекты книг и курсов, сочетания карт, ваши правила — всё, что ChatGPT должен знать про эту колоду.</p>
+    <p class="small muted">Конспекты книг и курсов, сочетания карт, ваши правила — всё, что Gemini должен знать про эту колоду.</p>
     ${list.length ? `<div class="list">${list.map((m) => `<div class="item"><div class="row between"><b>${esc(m.title || 'Без названия')}</b><span class="small muted">${m.tag ? `<span class="tag">${esc(m.tag)}</span> ` : ''}${esc(dayName((m.createdAt || '').slice(0, 10)))}</span></div>
       <details class="mat"><summary class="small">${esc((m.text || '').slice(0, 140))}${(m.text || '').length > 140 ? '…' : ''}</summary><div class="mat-text">${esc(m.text || '')}</div></details>
       <div class="row"><button class="link" data-act="mat.edit" data-deck="${d.id}" data-id="${m.id}">Изменить</button><button class="link danger" data-act="mat.del" data-id="${m.id}">Удалить</button></div></div>`).join('')}</div>`
@@ -251,11 +251,11 @@ export function cardPage(a, deckId, key) {
       <h2 class="card-title">${esc(x.name)}</h2>
       ${x.up ? `<p><b>Прямое:</b> ${esc(x.up)}</p>` : ''}${rev && x.rev ? `<p><b>Перевёрнутое:</b> ${esc(x.rev)}</p>` : ''}
       <p class="small muted">${inReadings.length ? `Выпадала в раскладах: ${inReadings.length}` : 'В раскладах пока не выпадала'}</p>
-      <div class="row"><button data-act="card.ask" data-deck="${deckId}" data-name="${esc(x.name)}">${ic('chat')} Спросить ChatGPT</button><button class="link" data-act="card.rename" data-id="${x.id}">Переименовать</button></div></div></div>
+      <div class="row"><button data-act="card.ask" data-deck="${deckId}" data-name="${esc(x.name)}">${ic('chat')} Спросить Gemini</button><button class="link" data-act="card.rename" data-id="${x.id}">Переименовать</button></div></div></div>
   <div class="card mine"><h2>${ic('note')} Мои наработки</h2>
     <textarea id="cf_notes" rows="${Math.min(14, Math.max(4, Math.ceil((x.notes || '').length / 60)))}" data-chg="card.f" data-id="${x.id}" data-f="notes" placeholder="Как вы понимаете эту карту в этой колоде: детали рисунка, личные ассоциации, как она проявлялась у клиентов…">${esc(x.notes || '')}</textarea>
     <h3>Наблюдения из практики</h3>
-    ${(x.obs || []).length ? `<div class="obs">${[...x.obs].reverse().map((o) => `<div class="comment"><div class="small muted">${esc(dayName(o.date))}${o.src ? ' · ' + esc(o.src) : ''}</div><div class="pre">${esc(o.text)}</div><button class="link danger" data-act="card.delObs" data-id="${x.id}" data-o="${esc(o.id || '')}">убрать</button></div>`).join('')}</div>` : '<p class="small muted">Сюда попадают короткие записи: ваши и те, что ChatGPT сохранил из чата.</p>'}
+    ${(x.obs || []).length ? `<div class="obs">${[...x.obs].reverse().map((o) => `<div class="comment"><div class="small muted">${esc(dayName(o.date))}${o.src ? ' · ' + esc(o.src) : ''}</div><div class="pre">${esc(o.text)}</div><button class="link danger" data-act="card.delObs" data-id="${x.id}" data-o="${esc(o.id || '')}">убрать</button></div>`).join('')}</div>` : '<p class="small muted">Сюда попадают короткие записи: ваши и те, что Gemini сохранил из чата.</p>'}
     <form data-form="card.obs" data-id="${x.id}" class="obs-add"><textarea name="text" rows="2" placeholder="Новое наблюдение: например, «у клиентки выпала на вопрос о переезде — переезд случился через месяц»" aria-label="Новое наблюдение"></textarea><button type="submit">Добавить</button></form></div>
   <div class="card"><div class="row between"><h2>Типовые значения</h2><button data-act="card.fill" data-id="${x.id}">${ic('sparkle')} Дописать пустые</button></div>
     ${CARD_FIELDS.map(field).join('')}<p class="hint">Изменения сохраняются, когда вы выходите из поля.</p></div>
@@ -301,7 +301,7 @@ acts['card.ask'] = (d) => {
 };
 acts['card.fill'] = async (d) => {
   const c = app().ctx(), x = cardById(d.id), deck = c.decksById[x.deckId];
-  if (!c.prefs.openaiKey) { toast('Сначала добавьте ключ ChatGPT в настройках'); app().go('/settings'); return; }
-  toast('ChatGPT дописывает значения…');
+  if (!c.prefs.aiKey) { toast('Сначала добавьте ключ Gemini в настройках'); app().go('/settings'); return; }
+  toast('Gemini дописывает значения…');
   try { await fillCards(c, deck, [x]); toast('Готово'); } catch (e) { toast(aiErrorText(e)); }
 };

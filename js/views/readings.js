@@ -94,8 +94,8 @@ export function readingPage(a, id) {
 
   <div class="card mine"><h2>${ic('note')} Моя трактовка</h2><textarea rows="6" data-chg="r.f" data-id="${r.id}" data-f="myText" placeholder="Ваши выводы по раскладу" aria-label="Моя трактовка">${esc(r.myText || '')}</textarea></div>
 
-  <div class="card"><div class="row between"><h2>${ic('sparkle')} Трактовка ChatGPT</h2><div class="row"><button class="small-btn" id="aiStop" data-act="r.aiStop" hidden>Стоп</button><button class="primary" id="aiGo" data-act="r.ai" data-id="${r.id}" ${picked ? '' : 'disabled'}>${r.aiText ? 'Заново' : 'Истолковать'}</button></div></div>
-    <div class="ai-out" id="aiOut">${r.aiText ? md(r.aiText) : `<p class="muted small">${picked ? 'ChatGPT посмотрит на карты в связке и опирается на ваши наработки и материалы по этой колоде.' : 'Сначала выберите карты.'}</p>`}</div>
+  <div class="card"><div class="row between"><h2>${ic('sparkle')} Трактовка Gemini</h2><div class="row"><button class="small-btn" id="aiStop" data-act="r.aiStop" hidden>Стоп</button><button class="primary" id="aiGo" data-act="r.ai" data-id="${r.id}" ${picked ? '' : 'disabled'}>${r.aiText ? 'Заново' : 'Истолковать'}</button></div></div>
+    <div class="ai-out" id="aiOut">${r.aiText ? md(r.aiText) : `<p class="muted small">${picked ? 'Gemini посмотрит на карты в связке и опирается на ваши наработки и материалы по этой колоде.' : 'Сначала выберите карты.'}</p>`}</div>
     <div class="row" style="margin-top:8px"><button data-act="r.chat" data-id="${r.id}">${ic('chat')} Обсудить в чате колоды</button></div></div>
 
   <div class="card"><h2>Обратная связь</h2>
@@ -191,16 +191,16 @@ acts['pick.addPos'] = async (d) => {
 };
 acts['pick.clear'] = async (d) => { const r = byId(d.r); await save({ ...r, cards: r.positions.map(() => null) }); };
 
-// трактовка ChatGPT — текст появляется по мере написания
+// трактовка Gemini — текст появляется по мере написания
 let aiCtl = null;
 acts['r.ai'] = async (d) => {
   const c = app().ctx(), r = byId(d.id);
-  if (!c.prefs.openaiKey) { toast('Сначала добавьте ключ ChatGPT в настройках'); app().go('/settings'); return; }
+  if (!c.prefs.aiKey) { toast('Сначала добавьте ключ Gemini в настройках'); app().go('/settings'); return; }
   if (aiCtl) return;
   aiCtl = new AbortController();
   const out = document.getElementById('aiOut'), go = document.getElementById('aiGo'), stop = document.getElementById('aiStop');
   if (go) go.disabled = true; if (stop) stop.hidden = false;
-  if (out) out.innerHTML = '<p class="thinking">ChatGPT смотрит на карты…</p>';
+  if (out) out.innerHTML = '<p class="thinking">Gemini смотрит на карты…</p>';
   let text = '';
   try {
     text = await interpret(c, r, { signal: aiCtl.signal, onText: (t) => { text = t; const o = document.getElementById('aiOut'); if (o) o.innerHTML = md(t); } });
