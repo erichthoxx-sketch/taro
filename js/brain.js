@@ -61,11 +61,12 @@ export function historyFor(deck, msgs) {
 }
 
 // Отправить сообщение в чат колоды. live — объект для показа ответа по мере написания.
-export async function sendChat(c, deck, msgs, text, live) {
+// resend — сообщение уже в переписке (ответа на него не было): спрашиваем ещё раз, не дублируя его
+export async function sendChat(c, deck, msgs, text, live, { resend = null } = {}) {
   const { key, model } = aiConf(c);
   if (!key) throw new AIError('no_key');
-  const userMsg = { id: newMsgId(), role: 'user', text, ts: Date.now() };
-  await putMsg(deck.id, userMsg);
+  const userMsg = resend || { id: newMsgId(), role: 'user', text, ts: Date.now() };
+  if (!resend) await putMsg(deck.id, userMsg);
   const focus = [...msgs.slice(-4).map((m) => m.text), text].join('\n');
   const messages = [{ role: 'system', content: systemPrompt(c, deck, { focus }) }, ...historyFor(deck, [...msgs, userMsg])];
   let done = '';

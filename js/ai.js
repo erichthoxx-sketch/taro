@@ -6,22 +6,25 @@ import { parseSSE, pickModel, toGemini } from './tcalc.js';
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 
 export class AIError extends Error {
-  constructor(code, message, text = '', retryAfter = 0) { super(message || code); this.code = code; this.text = text; this.retryAfter = retryAfter; }
+  constructor(code, message, text = '', retryAfter = 0, raw = '') { super(message || code); this.code = code; this.text = text; this.retryAfter = retryAfter; this.raw = raw; }
 }
 
 export function aiErrorText(e) {
   const code = e?.code;
-  return ({
+  const msg = ({
     no_key: 'Добавьте бесплатный ключ Gemini в настройках — значок шестерёнки вверху.',
-    bad_key: 'Ключ Gemini не подошёл. Проверьте его в настройках.',
-    region: 'Google не отвечает из вашей страны. Включите VPN и повторите.',
+    bad_key: 'Google не узнал ключ. Скопируйте ключ на aistudio.google.com/apikey заново и вставьте в настройках.',
+    denied: 'Google отказал в доступе. Чаще всего это значит, что VPN выключен или VPN-сервер стоит в стране, где Gemini не работает — выберите сервер в Европе или США и повторите. Если не поможет — нажмите в настройках «Проверить связь с Gemini».',
+    region: 'Google не отвечает из вашей страны. Включите VPN (сервер в Европе или США) и повторите.',
     rate: 'Бесплатный лимит Gemini на эту минуту исчерпан. Подождите минуту и повторите.',
     daily: 'Бесплатный лимит Gemini на сегодня исчерпан. Он обновится завтра утром (около 10–11 по Москве). Можно переключиться на модель Flash-Lite в настройках — у неё лимит больше.',
-    bad_model: 'Выбранная модель недоступна. Обновите список моделей в настройках.',
+    bad_model: 'Выбранная модель недоступна. В настройках нажмите «Обновить список моделей» и выберите рекомендуемую.',
     too_long: 'Запрос получился слишком большим. Сократите материалы колоды.',
     blocked: 'Gemini отказался отвечать на этот запрос (сработал его фильтр). Попробуйте сформулировать иначе.',
-    network: 'Нет связи с Gemini. Проверьте интернет и VPN.',
-  })[code] || 'Gemini не ответил: ' + (e?.message || 'неизвестная ошибка');
+    network: 'Нет связи с Gemini. Проверьте интернет и включён ли VPN.',
+  })[code] || 'Gemini не ответил.';
+  // дословный ответ Google — чтобы по нему можно было понять настоящую причину
+  return e?.raw ? `${msg}\nОтвет Google: ${e.raw.slice(0, 300)}` : msg;
 }
 
 async function fail(r) {
@@ -30,16 +33,18 @@ async function fail(r) {
   const err = j?.error || {};
   const m = err.message || r.statusText || '';
   const details = JSON.stringify(err.details || []);
-  if (/location is not supported|region/i.test(m)) throw new AIError('region', m);
-  if (/API_KEY_INVALID|API key not valid|API key expired/i.test(m + details) || r.status === 401) throw new AIError('bad_key', m);
+  const raw = `${r.status}${err.status ? ' ' + err.status : ''}: ${m || 'без пояснений'}`;
+  const E = (code, wait = 0) => new AIError(code, m, '', wait, raw);
+  if (/location is not supported|not supported in your country|UNSUPPORTED_COUNTRY|user location/i.test(m + details)) throw E('region');
+  if (/API_KEY_INVALID|API key not valid|API key expired/i.test(m + details)) throw E('bad_key');
   if (r.status === 429 || err.status === 'RESOURCE_EXHAUSTED') {
     const wait = Number((/"retryDelay":"(\d+)/.exec(details) || [])[1] || 0);
-    throw new AIError(/PerDay|per day|daily/i.test(m + details) ? 'daily' : 'rate', m, '', wait);
+    throw E(/PerDay|per day|daily/i.test(m + details) ? 'daily' : 'rate', wait);
   }
-  if (r.status === 404) throw new AIError('bad_model', m);
-  if (/token count|too large|exceeds the maximum/i.test(m)) throw new AIError('too_long', m);
-  if (r.status === 403) throw new AIError('bad_key', m);
-  throw new AIError('api', m);
+  if (r.status === 404) throw E('bad_model');
+  if (/token count|too large|exceeds the maximum/i.test(m)) throw E('too_long');
+  if (r.status === 401 || r.status === 403) throw E('denied');
+  throw E('api');
 }
 
 const headers = (key) => ({ 'Content-Type': 'application/json', 'x-goog-api-key': key });
@@ -131,6 +136,11 @@ export async function chatJSON(opts) {
 
 // Обычный ответ без потока (для сводки памяти)
 export const chatText = (opts) => generate(opts);
+
+// Проверка связи из настроек: короткий вопрос выбранной модели
+export async function testConnection(key, model) {
+  return generate({ key, model, messages: [{ role: 'user', content: 'Ответь одним словом по-русски: работает?' }] });
+}
 
 // Инструменты: ИИ сам записывает наработки таролога в колоду
 export const TOOLS = [

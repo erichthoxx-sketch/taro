@@ -95,6 +95,7 @@ export function readingPage(a, id) {
   <div class="card mine"><h2>${ic('note')} Моя трактовка</h2><textarea rows="6" data-chg="r.f" data-id="${r.id}" data-f="myText" placeholder="Ваши выводы по раскладу" aria-label="Моя трактовка">${esc(r.myText || '')}</textarea></div>
 
   <div class="card"><div class="row between"><h2>${ic('sparkle')} Трактовка Gemini</h2><div class="row"><button class="small-btn" id="aiStop" data-act="r.aiStop" hidden>Стоп</button><button class="primary" id="aiGo" data-act="r.ai" data-id="${r.id}" ${picked ? '' : 'disabled'}>${r.aiText ? 'Заново' : 'Истолковать'}</button></div></div>
+    ${aiErr[r.id] ? `<div class="alert bad pre">${esc(aiErr[r.id])}</div>` : ''}
     <div class="ai-out" id="aiOut">${r.aiText ? md(r.aiText) : `<p class="muted small">${picked ? 'Gemini посмотрит на карты в связке и опирается на ваши наработки и материалы по этой колоде.' : 'Сначала выберите карты.'}</p>`}</div>
     <div class="row" style="margin-top:8px"><button data-act="r.chat" data-id="${r.id}">${ic('chat')} Обсудить в чате колоды</button></div></div>
 
@@ -193,11 +194,13 @@ acts['pick.clear'] = async (d) => { const r = byId(d.r); await save({ ...r, card
 
 // трактовка Gemini — текст появляется по мере написания
 let aiCtl = null;
+const aiErr = {}; // последняя ошибка толкования по раскладу — показываем, пока не повторят
 acts['r.ai'] = async (d) => {
   const c = app().ctx(), r = byId(d.id);
   if (!c.prefs.aiKey) { toast('Сначала добавьте ключ Gemini в настройках'); app().go('/settings'); return; }
   if (aiCtl) return;
   aiCtl = new AbortController();
+  delete aiErr[d.id];
   const out = document.getElementById('aiOut'), go = document.getElementById('aiGo'), stop = document.getElementById('aiStop');
   if (go) go.disabled = true; if (stop) stop.hidden = false;
   if (out) out.innerHTML = '<p class="thinking">Gemini смотрит на карты…</p>';
@@ -207,7 +210,7 @@ acts['r.ai'] = async (d) => {
     await save({ ...byId(d.id), aiText: text });
   } catch (e) {
     if (e.text) await save({ ...byId(d.id), aiText: e.text });
-    if (e.code !== 'cancelled') toast(aiErrorText(e));
+    if (e.code !== 'cancelled') aiErr[d.id] = aiErrorText(e);
   } finally { aiCtl = null; app().rerender(); }
 };
 acts['r.aiStop'] = () => aiCtl?.abort();

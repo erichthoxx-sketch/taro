@@ -1,6 +1,6 @@
 import { ic } from '../ticons.js';
 import { esc, acts, forms, changes, opt, toast, download, ask } from '../core/ui.js';
-import { listModels, aiErrorText } from '../ai.js';
+import { listModels, aiErrorText, testConnection } from '../ai.js';
 import { allMsgs, putMsg, getPhoto, setPhoto } from '../extra.js';
 import { savePrefs } from './decks.js';
 import { TCOLLS } from '../app.js';
@@ -18,6 +18,7 @@ export function settingsView(a) {
       <div class="row" style="margin-top:8px"><button class="primary" type="submit">Проверить и сохранить</button>${p.aiKey ? '<button type="button" class="link danger" data-act="set.unkey">Удалить ключ</button>' : ''}</div></form>
     ${p.aiKey ? `<label for="om">Модель</label><select id="om" data-chg="set.model">${(models.length ? models : [p.model || '']).map((m) => opt(m, m + (m === p.best ? ' — рекомендуемая' : m === p.cheap ? ' — больше запросов в день' : ''), p.model)).join('')}</select>
       <div class="row"><button class="link" data-act="set.models">${ic('refresh')} Обновить список моделей</button></div>
+      <div class="row" style="margin-top:8px"><button data-act="set.test">${ic('sparkle')} Проверить связь с Gemini</button></div><p id="aiTest" class="small pre"></p>
       <p class="hint">Рекомендуемая — самая новая Flash. Если часто упираетесь в дневной лимит, выберите Flash-Lite: у неё бесплатных запросов больше, но трактует она проще. Модели Pro бесплатно не работают.</p>` : ''}
     <details${p.aiKey ? '' : ' open'}><summary>Как получить бесплатный ключ</summary><ol class="steps small">
       <li>В России включите VPN — без него Google не пускает.</li>
@@ -66,6 +67,16 @@ acts['set.models'] = async () => {
   } catch (e) { toast(aiErrorText(e)); }
 };
 changes['set.model'] = (v) => savePrefs({ model: v });
+acts['set.test'] = async () => {
+  const p = app().ctx().prefs, out = document.getElementById('aiTest');
+  if (out) { out.className = 'small pre'; out.textContent = 'Спрашиваю Gemini…'; }
+  try {
+    const t = await testConnection(p.aiKey, p.model || p.best);
+    if (out) { out.className = 'small pre up'; out.textContent = `Связь есть, модель ${p.model} ответила: «${t.trim().slice(0, 80)}»`; }
+  } catch (e) {
+    if (out) { out.className = 'small pre down'; out.textContent = aiErrorText(e); }
+  }
+};
 changes['set.name'] = (v) => savePrefs({ name: v.trim() });
 changes['set.deck'] = (v) => savePrefs({ defaultDeck: v });
 changes['set.theme'] = (v) => app().setTheme(v);

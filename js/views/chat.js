@@ -44,7 +44,8 @@ export function chatView(a, id) {
     <div class="small muted">Gemini знает: ${cards.length} карт (с наработками — ${cards.filter(hasNotes).length}), материалов — ${mats.length}, память — ${memWords ? memWords + ' слов' : 'пока пусто'} · <button class="link" data-act="chat.memory" data-id="${deck.id}">память</button>${key ? ` · ${esc(model)}` : ''}</div></div>
   ${!key ? '<div class="alert">Чтобы чат заработал, добавьте бесплатный ключ Gemini в <a href="#" data-act="go" data-to="/settings">настройках</a>.</div>' : ''}
   <div class="chat" id="chatList">${list}</div>
-  ${chat.err ? `<div class="alert bad">${esc(chat.err)}</div>` : ''}
+  ${!chat.err && !busy && msgs?.length && msgs[msgs.length - 1].role === 'user' ? `<div class="alert"><div>Последний вопрос остался без ответа.</div><div class="row" style="margin-top:8px"><button data-act="chat.retry" data-id="${deck.id}">${ic('refresh')} Повторить вопрос</button></div></div>` : ''}
+  ${chat.err ? `<div class="alert bad"><div class="pre">${esc(chat.err)}</div>${!busy && msgs?.length && msgs[msgs.length - 1].role === 'user' ? `<div class="row" style="margin-top:8px"><button data-act="chat.retry" data-id="${deck.id}">${ic('refresh')} Повторить вопрос</button><button class="link" data-act="go" data-to="/settings">Настройки</button></div>` : ''}</div>` : ''}
   <div class="composer"><textarea id="chatIn" rows="2" placeholder="Напишите Gemini…" aria-label="Сообщение">${esc(ui.chatDraft[deck.id] || '')}</textarea>
     ${busy ? `<button data-act="chat.stop">${ic('stop')} Стоп</button>` : `<button class="primary" data-act="chat.send" data-id="${deck.id}" aria-label="Отправить">${ic('send')}</button>`}</div>`;
   return { html };
@@ -89,22 +90,23 @@ function paint() {
   if (el) { el.innerHTML = liveHtml(); window.scrollTo(0, document.body.scrollHeight); }
 }
 
-async function send(deckId) {
+async function send(deckId, resend = false) {
   const a = app(), c = a.ctx(), deck = c.decksById[deckId];
   const ta = document.getElementById('chatIn');
-  const text = (ta?.value || '').trim();
+  const msgs = chat.msgs || [];
+  const last = msgs[msgs.length - 1];
+  const again = resend && last?.role === 'user' ? last : null;
+  const text = again ? again.text : (ta?.value || '').trim();
   if (!text || busy || !deck) return;
   if (!c.prefs.aiKey) { toast('Сначала добавьте ключ Gemini в настройках'); a.go('/settings'); return; }
-  a.ui.chatDraft[deckId] = '';
-  if (ta) { ta.value = ''; ta.blur(); }
+  if (!again) { a.ui.chatDraft[deckId] = ''; if (ta) { ta.value = ''; ta.blur(); } }
   chat.err = '';
   busy = { deckId, text: '', notes: [], ctl: new AbortController() };
   a.rerender();
   try {
-    await sendChat(c, deck, chat.msgs || [], text, { signal: busy.ctl.signal, onText: (t, notes) => { if (!busy) return; busy.text = t; busy.notes = [...notes]; paint(); } });
+    await sendChat(c, deck, again ? msgs.slice(0, -1) : msgs, text, { signal: busy.ctl.signal, onText: (t, notes) => { if (!busy) return; busy.text = t; busy.notes = [...notes]; paint(); } }, { resend: again });
   } catch (e) {
     if (e.code !== 'cancelled') chat.err = aiErrorText(e);
-    if (e.code === 'no_key' || e.code === 'bad_key') a.ui.chatDraft[deckId] = text;
   } finally { busy = null; a.safeRender(); }
   // память: когда переписка разрослась, старое сжимается — в фоне, не мешая писать дальше
   setTimeout(async () => {
@@ -115,6 +117,7 @@ async function send(deckId) {
   }, 800);
 }
 acts['chat.send'] = (d) => send(d.id);
+acts['chat.retry'] = (d) => send(d.id, true);
 acts['chat.stop'] = () => busy?.ctl.abort();
 acts['chat.suggest'] = (d) => { const ta = document.getElementById('chatIn'); if (ta) { ta.value = d.t; app().ui.chatDraft[app().ui.chatDeck] = d.t; ta.focus(); } };
 acts['chat.more'] = () => { app().ui.chatLimit += 150; };
